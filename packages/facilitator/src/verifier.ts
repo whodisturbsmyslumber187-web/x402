@@ -10,7 +10,6 @@
 import {
   createPublicClient,
   http,
-  type PublicClient,
   type Address,
   verifyTypedData,
 } from 'viem';
@@ -28,7 +27,6 @@ import {
   EIP712_TYPES,
   SCHEMES,
   getGlobalEventBus,
-  PAYMENT_EVENTS,
 } from '@x402-platform/core';
 
 /**
@@ -68,7 +66,7 @@ export interface VerifierMetrics {
  * Handles payment verification with nonce dedup and multi-scheme support
  */
 export class PaymentVerifier {
-  private clients: Map<string, PublicClient> = new Map();
+  private clients: Map<string, ReturnType<typeof createPublicClient>> = new Map();
   private nonceCache: Map<string, NonceCacheEntry> = new Map();
   private nonceCacheCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -98,7 +96,7 @@ export class PaymentVerifier {
   /**
    * Get or create a public client for a network
    */
-  private getClient(networkId: string): PublicClient {
+  private getClient(networkId: string) {
     let client = this.clients.get(networkId);
     if (!client) {
       const network = getNetwork(networkId as NetworkId);

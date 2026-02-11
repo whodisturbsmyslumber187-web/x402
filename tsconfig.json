@@ -15,7 +15,19 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "baseUrl": ".",
+    "paths": {
+      "@x402-platform/core": ["packages/core/src/index.ts"],
+      "@x402-platform/core/*": ["packages/core/src/*"],
+      "@x402-platform/sdk": ["packages/sdk-ts/src/index.ts"],
+      "@x402-platform/sdk/*": ["packages/sdk-ts/src/*"],
+      "@x402-platform/sdk/client": ["packages/sdk-ts/src/client/index.ts"],
+      "@x402-platform/sdk/client/types": ["packages/sdk-ts/src/client/types.ts"],
+      "@x402-platform/sdk/client/*": ["packages/sdk-ts/src/client/*"],
+      "@x402-platform/sdk/server": ["packages/sdk-ts/src/server/index.ts"],
+      "@x402-platform/sdk/server/*": ["packages/sdk-ts/src/server/*"]
+    }
   },
   "exclude": ["node_modules", "dist", ".next"]
 }

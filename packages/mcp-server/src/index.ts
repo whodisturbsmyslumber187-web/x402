@@ -7,6 +7,10 @@
 
 export * from './server.js';
 export * from './tools/index.js';
-export * from './handlers/index.js';
-export * from './services/index.js';
 export * from './types.js';
+export { TOOL_HANDLERS, createToolContext } from './handlers/index.js';
+export {
+  WalletManager,
+  ServiceRegistry,
+  DelegationManager,
+} from './services/index.js';

@@ -22,6 +22,7 @@ import {
 } from '@x402-platform/core';
 import { WalletManager } from '../services/wallet-manager.js';
 import { ServiceRegistry } from '../services/registry.js';
+import type { RegisteredService } from '../services/registry.js';
 import { DelegationManager } from '../services/delegation.js';
 
 /**
@@ -57,10 +58,17 @@ export function createToolContext(): ToolContext {
     timeout: 30000,
   });
 
+  const refreshMsRaw = process.env['SERVICE_REGISTRY_REFRESH_MS'];
+  const refreshMs = refreshMsRaw ? Number.parseInt(refreshMsRaw, 10) : undefined;
+
   return {
     client,
     walletManager: new WalletManager(privateKey),
-    serviceRegistry: new ServiceRegistry(),
+    serviceRegistry: new ServiceRegistry({
+      registryUrl: process.env['SERVICE_REGISTRY_URL'],
+      registryFilePath: process.env['SERVICE_REGISTRY_FILE'],
+      refreshMs: Number.isFinite(refreshMs) ? refreshMs : undefined,
+    }),
     delegationManager: new DelegationManager(),
     activeNetwork: process.env['DEFAULT_NETWORK'] || 'base-sepolia',
   };
@@ -209,7 +217,7 @@ export const TOOL_HANDLERS: Record<string, (args: Record<string, unknown>, ctx: 
           body: args.body,
           maxAmount: args.maxAmount as string | undefined,
         },
-        (chunk) => {
+        (chunk: string) => {
           chunks.push(chunk);
         }
       );
@@ -326,6 +334,50 @@ export const TOOL_HANDLERS: Record<string, (args: Record<string, unknown>, ctx: 
       ].filter(Boolean).join('\n'));
     } catch (err) {
       return error(err instanceof Error ? err.message : 'Health check failed');
+    }
+  },
+
+  x402_register_service: async (args, ctx) => {
+    try {
+      const name = args.name as string;
+      const url = args.url as string;
+      if (!name || !url) return error('name and url are required');
+
+      const service: RegisteredService = {
+        name,
+        url,
+        category: (args.category as string) || 'tools',
+        description: (args.description as string) || 'x402 provider',
+        price: (args.price as string) || '0 USDC/request',
+        network: (args.network as string) || ctx.activeNetwork,
+        tags: Array.isArray(args.tags) ? (args.tags as string[]) : [],
+        status: (args.status as RegisteredService['status']) || 'active',
+      };
+
+      ctx.serviceRegistry.register(service);
+      return success([
+        '✅ Service registered',
+        `  Name: ${service.name}`,
+        `  URL: ${service.url}`,
+        `  Category: ${service.category}`,
+        `  Price: ${service.price}`,
+      ].join('\n'));
+    } catch (err) {
+      return error(err instanceof Error ? err.message : 'Service registration failed');
+    }
+  },
+
+  x402_sync_registry: async (_args, ctx) => {
+    try {
+      const sync = await ctx.serviceRegistry.syncFromSource();
+      return success([
+        '🔄 Registry sync complete',
+        `  Source: ${sync.source}`,
+        `  Services loaded: ${sync.loaded}`,
+        `  Total indexed: ${ctx.serviceRegistry.getAll().length}`,
+      ].join('\n'));
+    } catch (err) {
+      return error(err instanceof Error ? err.message : 'Registry sync failed');
     }
   },
 

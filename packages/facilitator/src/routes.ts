@@ -11,6 +11,7 @@ import { PaymentSettler } from './settler.js';
 import {
   verifyRequestSchema,
   settleRequestSchema,
+  type PaymentRequirements,
   SCHEMES,
   getSupportedNetworks,
   RateLimiter,
@@ -94,6 +95,7 @@ export function createRoutes(
         avgLatencyMs: Math.round(settlerMetrics.averageLatencyMs * 100) / 100,
         totalGasUsed: settlerMetrics.totalGasUsed.toString(),
       },
+      revenue: settler.getRevenueSummary(),
       rateLimit: {
         available: rateLimiter.getAvailableTokens(),
       },
@@ -106,6 +108,7 @@ export function createRoutes(
   app.get('/metrics', (c) => {
     const vm = verifier.getMetrics();
     const sm = settler.getMetrics();
+    const rs = settler.getRevenueSummary();
     const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
 
     const lines = [
@@ -142,6 +145,18 @@ export function createRoutes(
       '# HELP x402_replay_attacks_blocked Total replay attempts blocked',
       '# TYPE x402_replay_attacks_blocked counter',
       `x402_replay_attacks_blocked ${vm.replayAttemptsBlocked}`,
+      '',
+      '# HELP x402_fee_bps Configured platform fee in basis points',
+      '# TYPE x402_fee_bps gauge',
+      `x402_fee_bps ${rs.feeBps}`,
+      '',
+      '# HELP x402_revenue_gross_total Gross amount settled across providers',
+      '# TYPE x402_revenue_gross_total counter',
+      `x402_revenue_gross_total ${rs.totalGrossAmount}`,
+      '',
+      '# HELP x402_revenue_fee_total Total estimated platform fees',
+      '# TYPE x402_revenue_fee_total counter',
+      `x402_revenue_fee_total ${rs.totalFeeAmount}`,
     ];
 
     c.header('Content-Type', 'text/plain; version=0.0.4');
@@ -153,7 +168,7 @@ export function createRoutes(
   // ================================================
   app.get('/supported', (c) => {
     const networks = getSupportedNetworks();
-    const kinds = networks.flatMap(network => [
+    const kinds = networks.flatMap((network: string) => [
       { scheme: SCHEMES.EXACT, network },
       { scheme: SCHEMES.UPTO, network },
     ]);
@@ -177,7 +192,7 @@ export function createRoutes(
 
       const result = await verifier.verify(
         parsed.data.paymentHeader,
-        parsed.data.paymentRequirements
+        parsed.data.paymentRequirements as PaymentRequirements
       );
 
       return c.json({
@@ -211,7 +226,7 @@ export function createRoutes(
 
       const result = await settler.settle(
         parsed.data.paymentHeader,
-        parsed.data.paymentRequirements,
+        parsed.data.paymentRequirements as PaymentRequirements,
         {
           // For upto scheme, client can specify actual amount in body
           actualAmount: (body as Record<string, unknown>).actualAmount as string | undefined,
@@ -249,7 +264,7 @@ export function createRoutes(
 
       const result = await settler.estimateGas(
         parsed.data.paymentHeader,
-        parsed.data.paymentRequirements
+        parsed.data.paymentRequirements as PaymentRequirements
       );
 
       return c.json(result);
@@ -258,6 +273,33 @@ export function createRoutes(
         error: error instanceof Error ? error.message : 'Gas estimation failed',
       }, 500);
     }
+  });
+
+  // ================================================
+  // Revenue Summary
+  // ================================================
+  app.get('/revenue', (c) => {
+    return c.json({
+      ...settler.getRevenueSummary(),
+      recent: settler.getRecentRevenue(100),
+    });
+  });
+
+  // ================================================
+  // Provider Payout Preview
+  // ================================================
+  app.get('/payouts/preview', (c) => {
+    const summary = settler.getRevenueSummary();
+    return c.json({
+      feeBps: summary.feeBps,
+      payouts: summary.providerBalances.map((provider) => ({
+        provider: provider.provider,
+        grossAmount: provider.grossAmount,
+        feeAmount: provider.feeAmount,
+        netAmount: provider.netAmount,
+      })),
+      generatedAt: new Date().toISOString(),
+    });
   });
 
   return app;

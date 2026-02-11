@@ -7,7 +7,8 @@
  */
 
 import express from 'express';
-import { x402Express } from '@x402-platform/sdk/server';
+import { createX402Middleware } from '@x402-platform/sdk/server';
+import { getNetwork, SCHEMES } from '@x402-platform/core';
 
 const app = express();
 app.use(express.json());
@@ -16,35 +17,54 @@ app.use(express.json());
 // X402 MIDDLEWARE CONFIGURATION
 // ============================================
 
-// Configure which endpoints require payment
-app.use(x402Express({
-  // Your facilitator endpoint (use our hosted one or run your own)
-  facilitator: process.env['FACILITATOR_URL'] || 'http://localhost:3001',
-  
-  // Your wallet address to receive payments
-  payTo: (process.env['WALLET_ADDRESS'] || '0x742d35Cc6634C0532925a3b844Bc9e7595f0Ab3a') as `0x${string}`,
-  
-  // Network (testnet for development)
-  network: 'base-sepolia',
-  
-  // Define pricing per route
+const facilitatorUrl = process.env['FACILITATOR_URL'] || 'http://localhost:3001';
+const network = getNetwork('base-sepolia');
+const payTo = (process.env['WALLET_ADDRESS'] || '0x742d35Cc6634C0532925a3b844Bc9e7595f0Ab3a') as `0x${string}`;
+
+app.use(createX402Middleware({
+  facilitatorUrl,
   routes: {
-    // AI generation endpoint - 0.01 USDC per call
     'POST /api/generate': {
-      amount: '10000',  // 0.01 USDC (6 decimals)
-      description: 'AI text generation',
+      facilitatorUrl,
+      requirements: {
+        scheme: SCHEMES.EXACT,
+        network: network.id,
+        maxAmountRequired: '10000',
+        resource: '/api/generate',
+        description: 'AI text generation',
+        mimeType: 'application/json',
+        payTo,
+        maxTimeoutSeconds: 60,
+        asset: network.usdc,
+      },
     },
-    
-    // Premium data access - 0.001 USDC per call  
     'GET /api/data/*': {
-      amount: '1000',   // 0.001 USDC
-      description: 'Premium data access',
+      facilitatorUrl,
+      requirements: {
+        scheme: SCHEMES.EXACT,
+        network: network.id,
+        maxAmountRequired: '1000',
+        resource: '/api/data/*',
+        description: 'Premium data access',
+        mimeType: 'application/json',
+        payTo,
+        maxTimeoutSeconds: 60,
+        asset: network.usdc,
+      },
     },
-    
-    // Image generation - 0.05 USDC per call
     'POST /api/image': {
-      amount: '50000',  // 0.05 USDC
-      description: 'AI image generation',
+      facilitatorUrl,
+      requirements: {
+        scheme: SCHEMES.EXACT,
+        network: network.id,
+        maxAmountRequired: '50000',
+        resource: '/api/image',
+        description: 'AI image generation',
+        mimeType: 'application/json',
+        payTo,
+        maxTimeoutSeconds: 60,
+        asset: network.usdc,
+      },
     },
   },
 }));
@@ -53,7 +73,7 @@ app.use(x402Express({
 // FREE ENDPOINTS (No payment required)
 // ============================================
 
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({
     name: 'X402 Example API',
     version: '1.0.0',
@@ -75,7 +95,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 

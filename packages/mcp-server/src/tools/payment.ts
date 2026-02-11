@@ -142,4 +142,10 @@ Returns chunks as they arrive.`,
   },
 };
 
+export const PAYMENT_TOOL_CATEGORY = {
+  name: 'Payment',
+  description: 'Tools for executing paid x402 requests',
+  tools: Object.keys(PAYMENT_TOOLS),
+};
+
 export type PaymentToolName = keyof typeof PAYMENT_TOOLS;

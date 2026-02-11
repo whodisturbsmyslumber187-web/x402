@@ -15,6 +15,35 @@ import {
 import { ALL_TOOLS, ALL_CATEGORIES, TOTAL_TOOLS } from './tools/index.js';
 import { TOOL_HANDLERS, createToolContext } from './handlers/index.js';
 
+export interface MpcServerRunConfig {
+  wallet?: {
+    privateKey: `0x${string}`;
+    maxSpendPerRequest?: bigint;
+    maxTotalSpend?: bigint;
+  };
+  trustedServices?: string[];
+  network?: string;
+}
+
+export function getServerInfo() {
+  const categories: Record<string, string[]> = {};
+  for (const category of ALL_CATEGORIES) {
+    const tools = Object.keys(ALL_TOOLS).filter((toolName) =>
+      toolName.includes(category.name.toLowerCase()) ||
+      (category.name === 'Payment' && toolName.startsWith('x402_') && !toolName.includes('wallet'))
+    );
+    categories[category.name] = tools;
+  }
+
+  return {
+    name: 'x402-payment-server',
+    version: '3.0.0',
+    description: 'MCP tools for x402 payments, discovery, wallet and delegation',
+    totalTools: TOTAL_TOOLS,
+    categories,
+  };
+}
+
 /**
  * Create and configure the MCP server
  */
@@ -53,7 +82,7 @@ export function createX402McpServer() {
   });
 
   // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, (async (request: { params: { name: string; arguments?: unknown } }) => {
     const { name, arguments: args } = request.params;
 
     const handler = TOOL_HANDLERS[name];
@@ -83,7 +112,7 @@ export function createX402McpServer() {
         isError: true,
       };
     }
-  });
+  }) as any);
 
   return server;
 }
@@ -91,7 +120,14 @@ export function createX402McpServer() {
 /**
  * Run the MCP server with stdio transport
  */
-export async function runMcpServer() {
+export async function runMcpServer(config?: MpcServerRunConfig) {
+  if (config?.wallet?.privateKey) {
+    process.env['WALLET_PRIVATE_KEY'] = config.wallet.privateKey;
+  }
+  if (config?.network) {
+    process.env['DEFAULT_NETWORK'] = config.network;
+  }
+
   const server = createX402McpServer();
   const transport = new StdioServerTransport();
 

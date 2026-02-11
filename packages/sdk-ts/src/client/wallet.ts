@@ -10,12 +10,8 @@ import {
   createWalletClient,
   createPublicClient,
   http,
-  type WalletClient,
-  type PublicClient,
   type Hex,
   type Address,
-  keccak256,
-  encodePacked,
 } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import {
@@ -33,8 +29,8 @@ import {
  */
 export class X402Wallet {
   private account: PrivateKeyAccount;
-  private walletClients: Map<NetworkId, WalletClient> = new Map();
-  private publicClients: Map<NetworkId, PublicClient> = new Map();
+  private walletClients: Map<NetworkId, ReturnType<typeof createWalletClient>> = new Map();
+  private publicClients: Map<NetworkId, ReturnType<typeof createPublicClient>> = new Map();
   private usedNonces: Set<string> = new Set();
 
   constructor(privateKey: `0x${string}`) {
@@ -51,7 +47,7 @@ export class X402Wallet {
   /**
    * Get or create wallet client for a network
    */
-  private getWalletClient(networkId: NetworkId): WalletClient {
+  private getWalletClient(networkId: NetworkId) {
     let client = this.walletClients.get(networkId);
     if (!client) {
       const network = getNetwork(networkId);
@@ -68,7 +64,7 @@ export class X402Wallet {
   /**
    * Get or create public client for a network
    */
-  private getPublicClient(networkId: NetworkId): PublicClient {
+  private getPublicClient(networkId: NetworkId) {
     let client = this.publicClients.get(networkId);
     if (!client) {
       const network = getNetwork(networkId);
@@ -90,7 +86,8 @@ export class X402Wallet {
     do {
       const randomBytes = new Uint8Array(32);
       crypto.getRandomValues(randomBytes);
-      nonce = keccak256(encodePacked(['bytes'], [randomBytes])) as Hex;
+      const hex = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      nonce = `0x${hex}` as Hex;
       attempts++;
     } while (this.usedNonces.has(nonce) && attempts < 100);
     
@@ -244,7 +241,7 @@ export class X402Wallet {
     const networks = getAllNetworks();
     const results: Record<string, { balance: bigint; formatted: string }> = {};
 
-    const promises = networks.map(async (network) => {
+    const promises = networks.map(async (network: { id: NetworkId }) => {
       try {
         const balance = await this.getBalance(network.id);
         const formatted = `${(Number(balance) / 1e6).toFixed(6)} USDC`;

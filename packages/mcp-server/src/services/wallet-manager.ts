@@ -35,12 +35,14 @@ export interface WalletBalance {
 export interface TransactionRecord {
   id: string;
   serviceUrl: string;
+  url?: string;
   amount: string;
   amountFormatted: string;
   txHash: string | null;
   network: NetworkId;
   timestamp: Date;
   success: boolean;
+  paid?: boolean;
   delegationId?: string;
 }
 
@@ -48,9 +50,14 @@ export interface SpendingStats {
   totalSpent: bigint;
   totalSpentFormatted: string;
   requestCount: number;
+  totalTransactions: number;
   successRate: number;
+  paidRequests: number;
+  freeRequests: number;
   avgCostPerRequest: string;
+  avgPerRequest: string;
   topServices: { url: string; spent: string; count: number }[];
+  topService?: string;
   spendingByPeriod: {
     today: string;
     thisWeek: string;
@@ -93,48 +100,65 @@ export class WalletManager {
   /**
    * Get balance on a specific network
    */
-  async getBalance(networkId: NetworkId): Promise<WalletBalance> {
+  async getBalance(networkId: NetworkId): Promise<bigint> {
     const network = getNetwork(networkId);
     const client = createPublicClient({
       chain: network.chain,
       transport: http(network.rpcUrl),
     });
 
-    const balance = await client.readContract({
+    return client.readContract({
       address: network.usdc,
       abi: ERC20_ABI,
       functionName: 'balanceOf',
       args: [this.address],
     });
-
-    return {
-      network: networkId,
-      networkName: network.name,
-      balance: balance.toString(),
-      balanceFormatted: formatUnits(balance, 6),
-      token: 'USDC',
-    };
   }
 
   /**
    * Get balances on all networks
    */
-  async getAllBalances(): Promise<WalletBalance[]> {
+  async getAllBalances(): Promise<Array<{ network: NetworkId; balance: bigint; balanceFormatted: string }>> {
     const networks = getAllNetworks();
     const balances = await Promise.all(
       networks.map(n => this.getBalance(n.id as NetworkId))
     );
-    return balances;
+    return networks.map((network, index) => ({
+      network: network.id as NetworkId,
+      balance: balances[index] ?? 0n,
+      balanceFormatted: formatUnits(balances[index] ?? 0n, 6),
+    }));
   }
 
   /**
    * Record a transaction
    */
-  recordTransaction(tx: Omit<TransactionRecord, 'id' | 'timestamp'>): void {
+  recordTransaction(tx: {
+    serviceUrl?: string;
+    url?: string;
+    amount: string;
+    amountFormatted?: string;
+    txHash?: string | null;
+    network: NetworkId | string;
+    success?: boolean;
+    paid?: boolean;
+    timestamp?: Date;
+    delegationId?: string;
+  }): void {
+    const serviceUrl = tx.serviceUrl ?? tx.url ?? 'unknown';
+    const success = tx.success ?? tx.paid ?? false;
     const record: TransactionRecord = {
-      ...tx,
+      serviceUrl,
+      url: serviceUrl,
+      amount: tx.amount,
+      amountFormatted: tx.amountFormatted ?? formatUnits(BigInt(tx.amount), 6),
+      txHash: tx.txHash ?? null,
+      network: tx.network as NetworkId,
+      success,
+      paid: success,
+      delegationId: tx.delegationId,
       id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: new Date(),
+      timestamp: tx.timestamp ?? new Date(),
     };
     
     this.transactions.unshift(record);
@@ -151,13 +175,26 @@ export class WalletManager {
   /**
    * Get transaction history
    */
+  getHistory(limit?: number): TransactionRecord[];
   getHistory(options?: {
     limit?: number;
     since?: Date;
     serviceUrl?: string;
     network?: NetworkId;
     delegationId?: string;
-  }): TransactionRecord[] {
+  }): TransactionRecord[];
+  getHistory(
+    optionsOrLimit?: number | {
+      limit?: number;
+      since?: Date;
+      serviceUrl?: string;
+      network?: NetworkId;
+      delegationId?: string;
+    }
+  ): TransactionRecord[] {
+    const options = typeof optionsOrLimit === 'number'
+      ? { limit: optionsOrLimit }
+      : optionsOrLimit;
     let result = [...this.transactions];
 
     if (options?.since) {
@@ -200,6 +237,8 @@ export class WalletManager {
       0n
     );
     const successCount = filtered.filter(tx => tx.success).length;
+    const paidRequests = filtered.filter(tx => tx.paid ?? tx.success).length;
+    const freeRequests = filtered.length - paidRequests;
     
     // Group by service
     const byService = new Map<string, { spent: bigint; count: number }>();
@@ -242,11 +281,18 @@ export class WalletManager {
       totalSpent,
       totalSpentFormatted: formatUnits(totalSpent, 6),
       requestCount: filtered.length,
+      totalTransactions: filtered.length,
       successRate: filtered.length > 0 ? successCount / filtered.length : 1,
+      paidRequests,
+      freeRequests,
       avgCostPerRequest: filtered.length > 0 
         ? formatUnits(totalSpent / BigInt(filtered.length), 6)
         : '0',
+      avgPerRequest: filtered.length > 0
+        ? formatUnits(totalSpent / BigInt(filtered.length), 6)
+        : '0',
       topServices,
+      topService: topServices[0]?.url,
       spendingByPeriod: {
         today: formatUnits(todaySpent, 6),
         thisWeek: formatUnits(weekSpent, 6),
@@ -263,6 +309,26 @@ export class WalletManager {
   }
 
   /**
+   * Compatibility wrapper for existing handlers
+   */
+  setBudget(config: {
+    maxPerRequest?: string;
+    maxPerHour?: string;
+    maxPerDay?: string;
+    autoApproveUnder?: string;
+    trustedServices?: string[];
+    totalBudget?: string;
+  }): void {
+    this.setBudgetConfig({
+      maxPerRequest: config.maxPerRequest ? BigInt(config.maxPerRequest) : undefined,
+      maxPerHour: config.maxPerHour ? BigInt(config.maxPerHour) : undefined,
+      maxPerDay: config.maxPerDay ? BigInt(config.maxPerDay) : undefined,
+      autoApproveUnder: config.autoApproveUnder ? BigInt(config.autoApproveUnder) : undefined,
+      trustedServices: config.trustedServices ?? this.budgetConfig.trustedServices,
+    });
+  }
+
+  /**
    * Get budget configuration
    */
   getBudgetConfig(): BudgetConfig {
@@ -276,6 +342,7 @@ export class WalletManager {
     allowed: boolean; 
     reason?: string;
   } {
+    void serviceUrl;
     const config = this.budgetConfig;
 
     // Check per-request limit

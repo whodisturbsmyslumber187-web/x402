@@ -5,7 +5,7 @@
  * payment verification and settlement.
  */
 
-import type { PaymentRequirements, PaymentResponse } from './payment.js';
+import type { PaymentRequirements } from './payment.js';
 
 /**
  * Verification Request

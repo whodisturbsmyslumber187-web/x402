@@ -19,7 +19,7 @@ async function main() {
 
   // Create verifier and settler
   const verifier = new PaymentVerifier(config.rpcUrls);
-  const settler = new PaymentSettler(config.privateKey, config.rpcUrls);
+  const settler = new PaymentSettler(config.privateKey, config.rpcUrls, config.feeBps);
 
   // Create routes
   const app = createRoutes(verifier, settler, {
@@ -36,6 +36,7 @@ async function main() {
 ║  Facilitator:   ${settler.address.slice(0, 12)}...${settler.address.slice(-8).padEnd(24)}║
 ║  Metrics:       ${(config.metricsEnabled ? 'Enabled' : 'Disabled').padEnd(42)}║
 ║  Rate Limit:    ${(config.rateLimitEnabled ? `${config.rateLimit} req/s` : 'Disabled').padEnd(42)}║
+║  Fee:           ${(`${config.feeBps} bps`).padEnd(42)}║
 ║  Networks:      ${Object.keys(config.rpcUrls).length > 0 ? Object.keys(config.rpcUrls).join(', ').slice(0, 42).padEnd(42) : 'All defaults'.padEnd(42)}║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Endpoints:                                                 ║
@@ -46,6 +47,8 @@ async function main() {
 ║    POST /verify        Verify payment                        ║
 ║    POST /settle        Settle payment on-chain               ║
 ║    POST /estimate-gas  Estimate settlement gas               ║
+║    GET  /revenue       Revenue summary + provider balances   ║
+║    GET  /payouts/preview  Preview net payouts                ║
 ╚══════════════════════════════════════════════════════════════╝
   `);
 

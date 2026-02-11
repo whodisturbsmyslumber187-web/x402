@@ -3,9 +3,8 @@
  * 
  * In-memory registry of x402-enabled services.
  * Supports search, health checking, and categorization.
- * 
- * In production, this would connect to a live discovery service.
  */
+import { readFile } from 'node:fs/promises';
 
 /**
  * Registered service
@@ -31,15 +30,23 @@ export interface HealthCheckResult {
   error?: string;
 }
 
+export interface ServiceRegistryOptions {
+  registryUrl?: string;
+  registryFilePath?: string;
+  refreshMs?: number;
+}
+
 /**
  * Service Registry
  */
 export class ServiceRegistry {
   private services: RegisteredService[] = [];
   private healthCache: Map<string, HealthCheckResult> = new Map();
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
+  constructor(private options: ServiceRegistryOptions = {}) {
     this.loadDefaultServices();
+    void this.initialize();
   }
 
   /**
@@ -168,6 +175,97 @@ export class ServiceRegistry {
   }
 
   /**
+   * Bootstraps an optional external registry source.
+   */
+  private async initialize(): Promise<void> {
+    await this.syncFromSource();
+
+    if (this.options.refreshMs && this.options.refreshMs > 0) {
+      this.syncInterval = setInterval(() => {
+        void this.syncFromSource();
+      }, this.options.refreshMs);
+    }
+  }
+
+  /**
+   * Load services from configured source and merge into existing list.
+   */
+  async syncFromSource(): Promise<{ source: 'url' | 'file' | 'default'; loaded: number }> {
+    const loaded = this.options.registryUrl
+      ? await this.syncFromUrl(this.options.registryUrl)
+      : this.options.registryFilePath
+        ? await this.syncFromFile(this.options.registryFilePath)
+        : 0;
+
+    return {
+      source: this.options.registryUrl ? 'url' : this.options.registryFilePath ? 'file' : 'default',
+      loaded,
+    };
+  }
+
+  private async syncFromUrl(url: string): Promise<number> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        return 0;
+      }
+      const data = await response.json();
+      return this.ingestExternalServices(data);
+    } catch {
+      return 0;
+    }
+  }
+
+  private async syncFromFile(path: string): Promise<number> {
+    try {
+      const contents = await readFile(path, 'utf8');
+      const data = JSON.parse(contents);
+      return this.ingestExternalServices(data);
+    } catch {
+      return 0;
+    }
+  }
+
+  private ingestExternalServices(data: unknown): number {
+    if (!Array.isArray(data)) {
+      return 0;
+    }
+
+    let loaded = 0;
+    for (const item of data) {
+      const service = this.toRegisteredService(item);
+      if (!service) {
+        continue;
+      }
+      this.register(service);
+      loaded++;
+    }
+    return loaded;
+  }
+
+  private toRegisteredService(item: unknown): RegisteredService | null {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+
+    const rec = item as Record<string, unknown>;
+    if (typeof rec['name'] !== 'string' || typeof rec['url'] !== 'string') {
+      return null;
+    }
+
+    return {
+      name: rec['name'],
+      url: rec['url'],
+      category: typeof rec['category'] === 'string' ? rec['category'] : 'tools',
+      description: typeof rec['description'] === 'string' ? rec['description'] : 'x402 service',
+      price: typeof rec['price'] === 'string' ? rec['price'] : '0 USDC/request',
+      network: typeof rec['network'] === 'string' ? rec['network'] : 'base-mainnet',
+      tags: Array.isArray(rec['tags']) ? rec['tags'].filter((v): v is string => typeof v === 'string') : [],
+      status: rec['status'] === 'inactive' ? 'inactive' : rec['status'] === 'unknown' ? 'unknown' : 'active',
+    };
+  }
+
+  /**
    * Search services by query
    */
   search(query?: string, category?: string): RegisteredService[] {
@@ -207,6 +305,10 @@ export class ServiceRegistry {
     } else {
       this.services.push(service);
     }
+  }
+
+  getAll(): RegisteredService[] {
+    return [...this.services];
   }
 
   /**
@@ -255,5 +357,12 @@ export class ServiceRegistry {
    */
   getCategories(): string[] {
     return [...new Set(this.services.map(s => s.category))];
+  }
+
+  destroy(): void {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
   }
 }

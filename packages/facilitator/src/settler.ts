@@ -10,8 +10,6 @@ import {
   createPublicClient,
   createWalletClient,
   http,
-  type PublicClient,
-  type WalletClient,
   type Address,
   type Hex,
 } from 'viem';
@@ -57,6 +55,24 @@ export interface SettlerMetrics {
   averageLatencyMs: number;
 }
 
+export interface RevenueRecord {
+  txHash: string;
+  provider: Address;
+  payer: Address;
+  network: string;
+  grossAmount: string;
+  feeAmount: string;
+  settledAt: string;
+}
+
+export interface RevenueSummary {
+  feeBps: number;
+  totalGrossAmount: string;
+  totalFeeAmount: string;
+  totalSettledCount: number;
+  providerBalances: Array<{ provider: string; grossAmount: string; feeAmount: string; netAmount: string }>;
+}
+
 /**
  * USDC contract ABI for transferWithAuthorization
  */
@@ -86,8 +102,9 @@ const TRANSFER_WITH_AUTH_ABI = [
  */
 export class PaymentSettler {
   private account: PrivateKeyAccount;
-  private publicClients: Map<string, PublicClient> = new Map();
-  private walletClients: Map<string, WalletClient> = new Map();
+  private publicClients: Map<string, ReturnType<typeof createPublicClient>> = new Map();
+  private walletClients: Map<string, ReturnType<typeof createWalletClient>> = new Map();
+  private revenueRecords: RevenueRecord[] = [];
 
   // Metrics
   private metrics: SettlerMetrics = {
@@ -99,10 +116,11 @@ export class PaymentSettler {
   };
 
   constructor(
-    private privateKey: `0x${string}`,
-    private rpcUrls: Record<string, string> = {}
+    _privateKey: `0x${string}`,
+    private rpcUrls: Record<string, string> = {},
+    private feeBps = 50
   ) {
-    this.account = privateKeyToAccount(privateKey);
+    this.account = privateKeyToAccount(_privateKey);
   }
 
   /**
@@ -115,7 +133,7 @@ export class PaymentSettler {
   /**
    * Get or create clients for a network
    */
-  private getClients(networkId: string): { public: PublicClient; wallet: WalletClient } {
+  private getClients(networkId: string) {
     let publicClient = this.publicClients.get(networkId);
     let walletClient = this.walletClients.get(networkId);
 
@@ -199,12 +217,12 @@ export class PaymentSettler {
         {
           maxAttempts: options?.maxRetries ?? 3,
           baseDelayMs: 2000,
-          isRetryable: (error) => {
+          isRetryable: (error: unknown) => {
             // Don't retry on nonce-already-used or insufficient funds
             const msg = error instanceof Error ? error.message : '';
             return !msg.includes('nonce') && !msg.includes('insufficient');
           },
-          onRetry: (attempt, error) => {
+          onRetry: (attempt: number, error: unknown) => {
             console.warn(`[Settler] Retry attempt ${attempt}:`, error);
           },
         }
@@ -216,6 +234,17 @@ export class PaymentSettler {
       // Emit event
       const eventBus = getGlobalEventBus();
       if (result.success && result.txHash) {
+        const chargedAmount = BigInt(result.actualAmount ?? paymentRequirements.maxAmountRequired);
+        this.recordRevenue({
+          txHash: result.txHash,
+          provider: paymentRequirements.payTo as Address,
+          payer: this.extractPayerAddress(paymentHeader),
+          network: paymentRequirements.network,
+          grossAmount: chargedAmount.toString(),
+          feeAmount: ((chargedAmount * BigInt(this.feeBps)) / 10_000n).toString(),
+          settledAt: new Date().toISOString(),
+        });
+
         await eventBus.emitSettled(
           paymentRequirements.resource,
           result.actualAmount ?? paymentRequirements.maxAmountRequired,
@@ -289,6 +318,7 @@ export class PaymentSettler {
 
     // Execute transaction
     const txHash = await walletClient.writeContract({
+      account: this.account,
       address: requirements.asset as Address,
       abi: TRANSFER_WITH_AUTH_ABI,
       functionName: 'transferWithAuthorization',
@@ -427,6 +457,49 @@ export class PaymentSettler {
   getMetrics(): SettlerMetrics {
     return { ...this.metrics, totalGasUsed: this.metrics.totalGasUsed };
   }
+
+  getRevenueSummary(): RevenueSummary {
+    const totalGross = this.revenueRecords.reduce((sum, record) => sum + BigInt(record.grossAmount), 0n);
+    const totalFees = this.revenueRecords.reduce((sum, record) => sum + BigInt(record.feeAmount), 0n);
+    const providerMap = new Map<string, { gross: bigint; fees: bigint }>();
+
+    for (const record of this.revenueRecords) {
+      const current = providerMap.get(record.provider) ?? { gross: 0n, fees: 0n };
+      current.gross += BigInt(record.grossAmount);
+      current.fees += BigInt(record.feeAmount);
+      providerMap.set(record.provider, current);
+    }
+
+    return {
+      feeBps: this.feeBps,
+      totalGrossAmount: totalGross.toString(),
+      totalFeeAmount: totalFees.toString(),
+      totalSettledCount: this.revenueRecords.length,
+      providerBalances: Array.from(providerMap.entries()).map(([provider, v]) => ({
+        provider,
+        grossAmount: v.gross.toString(),
+        feeAmount: v.fees.toString(),
+        netAmount: (v.gross - v.fees).toString(),
+      })),
+    };
+  }
+
+  getRecentRevenue(limit = 100): RevenueRecord[] {
+    return this.revenueRecords.slice(-limit).reverse();
+  }
+
+  private recordRevenue(record: RevenueRecord): void {
+    this.revenueRecords.push(record);
+    if (this.revenueRecords.length > 10_000) {
+      this.revenueRecords = this.revenueRecords.slice(-5000);
+    }
+  }
+
+  private extractPayerAddress(paymentHeader: string): Address {
+    const paymentPayload = decodePaymentHeader<PaymentPayload>(paymentHeader);
+    const payload = paymentPayload.payload as ExactSchemePayload;
+    return payload.authorization.from as Address;
+  }
 }
 
 /**
@@ -434,7 +507,8 @@ export class PaymentSettler {
  */
 export function createSettlers(
   privateKey: `0x${string}`,
-  rpcUrls?: Record<string, string>
+  rpcUrls?: Record<string, string>,
+  feeBps?: number
 ): PaymentSettler {
-  return new PaymentSettler(privateKey, rpcUrls);
+  return new PaymentSettler(privateKey, rpcUrls, feeBps);
 }

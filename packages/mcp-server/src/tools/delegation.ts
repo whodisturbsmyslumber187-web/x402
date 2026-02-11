@@ -166,4 +166,10 @@ Returns updated balances for both delegations.`,
   },
 };
 
+export const DELEGATION_TOOL_CATEGORY = {
+  name: 'Delegation',
+  description: 'Tools for multi-agent delegated budgets',
+  tools: Object.keys(DELEGATION_TOOLS),
+};
+
 export type DelegationToolName = keyof typeof DELEGATION_TOOLS;

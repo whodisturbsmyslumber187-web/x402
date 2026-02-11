@@ -2,7 +2,7 @@
  * Server Middleware Types
  */
 
-import type { PaymentRequirements, NetworkId } from '@x402-platform/core';
+import type { NetworkId } from '@x402-platform/core';
 
 /**
  * Route-level payment configuration

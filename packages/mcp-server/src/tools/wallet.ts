@@ -159,4 +159,10 @@ Returns confirmation of new budget settings.`,
   },
 };
 
+export const WALLET_TOOL_CATEGORY = {
+  name: 'Wallet',
+  description: 'Tools for balances, history, and spending controls',
+  tools: Object.keys(WALLET_TOOLS),
+};
+
 export type WalletToolName = keyof typeof WALLET_TOOLS;

@@ -129,6 +129,50 @@ Use this before making important paid requests.`,
       required: ['url'],
     },
   },
+
+  x402_register_service: {
+    name: 'x402_register_service',
+    description: `Register or update a provider service in the local discovery index.
+Useful for provider onboarding and instant listing updates during go-to-market.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Service name' },
+        url: { type: 'string', description: 'Base URL of the service' },
+        category: { type: 'string', description: 'Category (ai, data, tools, etc.)' },
+        description: { type: 'string', description: 'Human-readable description' },
+        price: { type: 'string', description: 'Pricing string (e.g. 0.01 USDC/request)' },
+        network: { type: 'string', description: 'Network identifier' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Search tags',
+        },
+        status: {
+          type: 'string',
+          enum: ['active', 'inactive', 'unknown'],
+          description: 'Service status',
+        },
+      },
+      required: ['name', 'url'],
+    },
+  },
+
+  x402_sync_registry: {
+    name: 'x402_sync_registry',
+    description: `Sync provider listings from configured external registry source (URL or JSON file).`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+export const DISCOVERY_TOOL_CATEGORY = {
+  name: 'Discovery',
+  description: 'Tools for discovering and comparing x402 services',
+  tools: Object.keys(DISCOVERY_TOOLS),
 };
 
 export type DiscoveryToolName = keyof typeof DISCOVERY_TOOLS;

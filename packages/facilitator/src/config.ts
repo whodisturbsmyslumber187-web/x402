@@ -31,6 +31,9 @@ export interface FacilitatorConfig {
 
   /** Log level */
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+
+  /** Platform fee in basis points applied for revenue accounting */
+  feeBps: number;
 }
 
 /**
@@ -71,5 +74,6 @@ export function loadConfig(): FacilitatorConfig {
     metricsEnabled: process.env['METRICS_ENABLED'] !== 'false',
     rateLimitEnabled: process.env['RATE_LIMIT_ENABLED'] !== 'false',
     logLevel: (process.env['LOG_LEVEL'] || 'info') as FacilitatorConfig['logLevel'],
+    feeBps: parseInt(process.env['FEE_BPS'] || '50', 10),
   };
 }

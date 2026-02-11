@@ -10,15 +10,17 @@ import type { Address } from 'viem';
 export interface Delegation {
   id: string;
   name: string;
+  agentId?: string;
   address: Address;
   privateKey: `0x${string}`;
   budget: bigint;
+  amount: string;
   spent: bigint;
   maxPerRequest?: bigint;
   allowedServices: string[];
   allowedCategories: string[];
   createdAt: Date;
-  expiresAt?: Date;
+  expiresAt: Date;
   revokedAt?: Date;
   status: 'active' | 'expired' | 'revoked' | 'exhausted';
   transactions: DelegationTransaction[];
@@ -33,9 +35,11 @@ export interface DelegationTransaction {
 }
 
 export interface CreateDelegationOptions {
-  name: string;
+  name?: string;
+  agentId?: string;
   amount: string | bigint;
   expiresIn?: number; // seconds
+  expiresInHours?: number;
   allowedServices?: string[];
   allowedCategories?: string[];
   maxPerRequest?: string | bigint;
@@ -52,6 +56,14 @@ export interface DelegationStats {
   successRate: number;
   avgCostPerRequest: string;
   byService: { url: string; spent: string; count: number }[];
+}
+
+export interface DelegationOverviewStats {
+  active: number;
+  totalDelegated: string;
+  totalSpent: string;
+  revoked: number;
+  expired: number;
 }
 
 /**
@@ -71,18 +83,20 @@ export class DelegationManager {
 
     const delegation: Delegation = {
       id,
-      name: options.name,
+      name: options.name ?? options.agentId ?? id,
+      agentId: options.agentId ?? options.name,
       address: account.address,
       privateKey,
       budget: BigInt(options.amount),
+      amount: BigInt(options.amount).toString(),
       spent: 0n,
       maxPerRequest: options.maxPerRequest ? BigInt(options.maxPerRequest) : undefined,
       allowedServices: options.allowedServices ?? [],
       allowedCategories: options.allowedCategories ?? [],
       createdAt: new Date(),
-      expiresAt: options.expiresIn 
-        ? new Date(Date.now() + options.expiresIn * 1000)
-        : undefined,
+      expiresAt: new Date(
+        Date.now() + (options.expiresIn ?? (options.expiresInHours ? options.expiresInHours * 3600 : 24 * 3600)) * 1000
+      ),
       status: 'active',
       transactions: [],
     };
@@ -142,7 +156,7 @@ export class DelegationManager {
   /**
    * Revoke a delegation
    */
-  revoke(id: string, reason?: string): { spent: bigint; returned: bigint } | null {
+  revoke(id: string, _reason?: string): { spent: bigint; returned: bigint } | null {
     const delegation = this.delegations.get(id);
     if (!delegation || delegation.status !== 'active') {
       return null;
@@ -240,7 +254,26 @@ export class DelegationManager {
   /**
    * Get statistics for a delegation
    */
-  getStats(id: string): DelegationStats | null {
+  getStats(): DelegationOverviewStats;
+  getStats(id: string): DelegationStats | null;
+  getStats(id?: string): DelegationStats | DelegationOverviewStats | null {
+    if (!id) {
+      const all = Array.from(this.delegations.values());
+      all.forEach((d) => this.updateStatus(d));
+      const active = all.filter((d) => d.status === 'active').length;
+      const revoked = all.filter((d) => d.status === 'revoked').length;
+      const expired = all.filter((d) => d.status === 'expired').length;
+      const totalDelegated = all.reduce((sum, d) => sum + d.budget, 0n);
+      const totalSpent = all.reduce((sum, d) => sum + d.spent, 0n);
+      return {
+        active,
+        totalDelegated: totalDelegated.toString(),
+        totalSpent: totalSpent.toString(),
+        revoked,
+        expired,
+      };
+    }
+
     const delegation = this.get(id);
     if (!delegation) return null;
 
