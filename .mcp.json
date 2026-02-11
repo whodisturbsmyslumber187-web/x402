@@ -1,0 +1,48 @@
+{
+  "mcpServers": {
+    "x402": {
+      "command": "node",
+      "args": ["./packages/mcp-server/dist/cli.js"],
+      "env": {
+        "WALLET_PRIVATE_KEY": "${WALLET_PRIVATE_KEY}",
+        "MAX_SPEND_PER_REQUEST": "1000000",
+        "MAX_TOTAL_SPEND": "100000000",
+        "NETWORK": "base-sepolia",
+        "TRUSTED_SERVICES": "https://openai.x402.dev,https://claude.x402.dev"
+      }
+    }
+  },
+  "x402Config": {
+    "description": "X402 MCP Server - God Level Edition",
+    "version": "2.0.0",
+    "tools": {
+      "payment": [
+        "x402_pay",
+        "x402_pay_batch",
+        "x402_estimate",
+        "x402_pay_stream"
+      ],
+      "discovery": [
+        "x402_discover",
+        "x402_service_info",
+        "x402_compare_prices",
+        "x402_health_check"
+      ],
+      "wallet": [
+        "x402_wallet_balance",
+        "x402_wallet_history",
+        "x402_wallet_fund",
+        "x402_spending_stats",
+        "x402_set_budget"
+      ],
+      "delegation": [
+        "x402_delegate_budget",
+        "x402_revoke_budget",
+        "x402_list_delegations",
+        "x402_delegation_stats",
+        "x402_transfer_between_delegations"
+      ]
+    },
+    "documentation": "See packages/mcp-server/README.md for full documentation"
+  }
+}

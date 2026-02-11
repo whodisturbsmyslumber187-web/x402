@@ -1,0 +1,56 @@
+{
+  "name": "@x402-platform/mcp-server",
+  "version": "2.0.0",
+  "description": "God-Level MCP server for x402 payments - 18+ tools for AI agents",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "x402-mcp-server": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "import": "./dist/services/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "clean": "rm -rf dist",
+    "info": "tsx src/cli.ts --info"
+  },
+  "dependencies": {
+    "@x402-platform/core": "*",
+    "@x402-platform/sdk": "*",
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "x402",
+    "mcp",
+    "claude",
+    "ai-agent",
+    "payments",
+    "usdc",
+    "blockchain"
+  ]
+}
